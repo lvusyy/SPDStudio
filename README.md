@@ -62,7 +62,7 @@ DDR4 内存 SPD 数据读写工具，支持查看、编辑和写入内存条的 
 ### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/yourusername/SPDTools.git
+git clone https://github.com/lvusyy/SPDTools.git
 cd SPDTools
 ```
 
