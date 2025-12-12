@@ -1,0 +1,166 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller customtkinter hidapi
+
+      - name: Build executable
+        run: |
+          pyinstaller --name="SPD_Studio" --windowed --onefile --icon=screenshots/overview.png --add-data="screenshots;screenshots" main.py
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SPD_Studio-Windows
+          path: dist/SPD_Studio.exe
+
+  # Linux build - Currently has platform compatibility issues
+  # The hidapi library requires specific USB permissions and udev rules on Linux
+  # Additionally, the HID device communication protocol may need adaptation
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libhidapi-dev libhidapi-hidraw0 libudev-dev
+          sudo apt-get install -y python3-tk
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller customtkinter hidapi
+
+      - name: Build executable
+        run: |
+          pyinstaller --name="SPD_Studio" --windowed --onefile --add-data="screenshots:screenshots" main.py
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SPD_Studio-Linux
+          path: dist/SPD_Studio
+
+  # macOS build - Currently NOT supported
+  # Reasons:
+  # 1. macOS requires signed applications for HID device access
+  # 2. The IOKit framework is needed for USB HID communication
+  # 3. hidapi on macOS uses different backend (IOHidManager vs libusb)
+  # 4. App needs to be notarized for distribution
+  #
+  # TODO: Future adaptation needed:
+  # - Implement IOKit-based HID communication
+  # - Add code signing workflow
+  # - Add notarization step
+  # build-macos:
+  #   runs-on: macos-latest
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #     ... (not implemented)
+
+  release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SPD_Studio-Windows
+          path: ./windows
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SPD_Studio-Linux
+          path: ./linux
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: SPD Studio ${{ steps.version.outputs.VERSION }}
+          body: |
+            ## SPD Studio ${{ steps.version.outputs.VERSION }}
+
+            DDR4 内存 SPD 数据读写工具
+
+            ### 下载说明
+
+            | 平台 | 文件 | 状态 |
+            |------|------|------|
+            | Windows | `SPD_Studio.exe` | ✅ 完全支持 |
+            | Linux | `SPD_Studio` | ⚠️ 实验性支持 (需要 udev 规则) |
+            | macOS | - | ❌ 暂不支持 |
+
+            ### Windows 使用说明
+            1. 下载 `SPD_Studio.exe`
+            2. 连接 SPD 读写器
+            3. 直接运行程序
+
+            ### Linux 使用说明
+            1. 下载 `SPD_Studio` 并添加执行权限: `chmod +x SPD_Studio`
+            2. 添加 udev 规则以允许非 root 用户访问 HID 设备:
+               ```bash
+               echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="0483", ATTR{idProduct}=="1230", MODE="0666"' | sudo tee /etc/udev/rules.d/99-spd-reader.rules
+               sudo udevadm control --reload-rules
+               ```
+            3. 重新插拔设备后运行程序
+
+            ### macOS 暂不支持的原因
+            - macOS 需要应用程序签名才能访问 HID 设备
+            - 需要使用 IOKit 框架进行 USB 通信
+            - 需要 Apple 开发者账号进行公证 (Notarization)
+
+            后续版本将逐步适配 macOS 平台。
+
+          files: |
+            ./windows/SPD_Studio.exe
+            ./linux/SPD_Studio
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

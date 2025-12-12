@@ -66,9 +66,25 @@ DDR4 内存 SPD 数据读写工具，支持查看、编辑和写入内存条的 
 - 支持 Profile 1 和 Profile 2
 - 显示频率、电压、时序参数
 
+## 平台支持
+
+| 平台 | 状态 | 说明 |
+|------|------|------|
+| Windows 10/11 | ✅ 完全支持 | 推荐平台，开箱即用 |
+| Linux | ⚠️ 实验性支持 | 需要配置 udev 规则 |
+| macOS | ❌ 暂不支持 | 需要适配 IOKit 框架 |
+
+### macOS 暂不支持的原因
+
+1. **应用签名要求**: macOS 需要签名的应用程序才能访问 HID 设备
+2. **IOKit 框架**: 需要使用 Apple 的 IOKit 框架进行 USB 通信
+3. **公证要求**: 分发需要 Apple 开发者账号进行公证 (Notarization)
+
+后续版本将逐步适配 macOS 平台，敬请期待。
+
 ## 系统要求
 
-- **操作系统**: Windows 10/11, Linux, macOS
+- **操作系统**: Windows 10/11 (推荐), Linux (实验性)
 - **Python**: 3.8 或更高版本
 - **依赖库**:
   - `customtkinter` - 现代化 GUI 框架
@@ -76,23 +92,52 @@ DDR4 内存 SPD 数据读写工具，支持查看、编辑和写入内存条的 
 
 ## 安装
 
-### 1. 克隆仓库
+### 方式一：下载预编译版本 (推荐)
+
+从 [Releases](https://github.com/lvusyy/SPDTools/releases) 页面下载对应平台的可执行文件：
+
+- **Windows**: 下载 `SPD_Studio.exe`，直接运行
+- **Linux**: 下载 `SPD_Studio`，添加执行权限后运行
+
+### 方式二：从源码运行
+
+#### 1. 克隆仓库
 
 ```bash
 git clone https://github.com/lvusyy/SPDTools.git
 cd SPDTools
 ```
 
-### 2. 安装依赖
+#### 2. 安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+或手动安装:
 
 ```bash
 pip install customtkinter hidapi
 ```
 
-### 3. 运行程序
+#### 3. 运行程序
 
 ```bash
 python main.py
+```
+
+### Linux 额外配置
+
+Linux 用户需要添加 udev 规则以允许非 root 用户访问 HID 设备：
+
+```bash
+# 创建 udev 规则
+echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="0483", ATTR{idProduct}=="1230", MODE="0666"' | sudo tee /etc/udev/rules.d/99-spd-reader.rules
+
+# 重新加载规则
+sudo udevadm control --reload-rules
+
+# 重新插拔设备后即可使用
 ```
 
 ## 使用说明
@@ -139,6 +184,13 @@ python main.py
 SPDTools/
 ├── main.py                 # 程序入口
 ├── README.md               # 本文档
+├── requirements.txt        # Python 依赖
+├── samples/                # 示例 SPD 数据文件
+│   ├── DDR3_*.bin
+│   └── DDR4_*.bin
+├── screenshots/            # 软件截图
+├── .github/workflows/      # CI/CD 工作流
+│   └── release.yml         # 自动构建发布
 ├── src/
 │   ├── __init__.py
 │   ├── core/               # 核心逻辑
@@ -153,7 +205,6 @@ SPDTools/
 │   │   └── widgets/        # UI 组件
 │   └── utils/              # 工具函数
 │       └── constants.py    # 常量定义
-└── *.bin                   # 示例 SPD 数据文件
 ```
 
 ## 技术规范
