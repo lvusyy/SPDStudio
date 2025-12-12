@@ -37,8 +37,8 @@ class SPDApp(ctk.CTk):
         self.geometry("1100x750")
         self.minsize(900, 600)
 
-        # 核心组件
-        self.driver = SPDDriver()
+        # 核心组件 - 启用调试模式
+        self.driver = SPDDriver(debug=True)
         self.data_model = SPDDataModel()
 
         # 状态
@@ -129,7 +129,18 @@ class SPDApp(ctk.CTk):
             fg_color=Colors.SECONDARY,
             command=self._compare_file
         )
-        self.btn_compare.pack(side="left")
+        self.btn_compare.pack(side="left", padx=(0, 10))
+
+        # 调试按钮
+        self.btn_debug = ctk.CTkButton(
+            btn_frame,
+            text="调试日志",
+            width=80,
+            fg_color="#555555",
+            hover_color="#666666",
+            command=self._show_debug_menu
+        )
+        self.btn_debug.pack(side="left")
 
         # 右侧：修改状态指示
         self.modified_label = ctk.CTkLabel(
@@ -256,10 +267,16 @@ class SPDApp(ctk.CTk):
     def _run_read(self):
         """执行读取（后台线程）"""
         try:
+            # 清除之前的调试日志
+            self.driver.clear_debug_log()
+
             if not self.driver.connect():
                 self._log("连接失败，请检查设备", "error")
+                self._log("提示: 点击 [调试日志] 按钮查看详细诊断信息", "warning")
                 self._set_status("连接失败")
                 self._set_buttons_state(True)
+                # 在日志中显示设备枚举信息
+                self._show_device_diagnostic()
                 return
 
             self._log("设备已连接")
@@ -292,14 +309,37 @@ class SPDApp(ctk.CTk):
                 self.info_label.configure(text=f"{info.get('manufacturer', '')} {info.get('capacity', '')}")
             else:
                 self._log("读取失败", "error")
+                self._log("提示: 点击 [调试日志] 按钮查看详细诊断信息", "warning")
                 self._set_status("读取失败")
 
         except Exception as e:
             self._log(f"读取出错: {str(e)}", "error")
+            self._log("提示: 点击 [调试日志] 按钮查看详细诊断信息", "warning")
             self._set_status("读取出错")
         finally:
             self._set_buttons_state(True)
             self.progress.set(0)
+
+    def _show_device_diagnostic(self):
+        """显示设备诊断信息"""
+        from ..core.driver import SPDDriver
+
+        self._log("--- 设备诊断信息 ---", "info")
+        devices = SPDDriver.find_spd_devices()
+        if devices:
+            self._log(f"找到 {len(devices)} 个匹配 VID/PID 的设备:", "info")
+            for i, dev in enumerate(devices):
+                self._log(f"  [{i}] {dev.get('product_string', 'Unknown')}", "info")
+        else:
+            self._log("未找到匹配 VID=0x0483, PID=0x1230 的设备", "warning")
+            all_devices = SPDDriver.enumerate_devices()
+            self._log(f"系统共检测到 {len(all_devices)} 个 HID 设备", "info")
+            # 显示部分相关设备
+            for dev in all_devices[:5]:
+                vid = dev.get('vendor_id', 0)
+                pid = dev.get('product_id', 0)
+                name = dev.get('product_string', 'N/A')
+                self._log(f"  VID=0x{vid:04X}, PID=0x{pid:04X}, {name}", "info")
 
     def _load_file(self):
         """加载文件"""
@@ -460,6 +500,162 @@ class SPDApp(ctk.CTk):
         except Exception as e:
             self._log(f"对比失败: {str(e)}", "error")
             messagebox.showerror("错误", f"对比失败: {str(e)}")
+
+    def _show_debug_menu(self):
+        """显示调试菜单"""
+        menu = DebugMenu(self, self.driver, self._log)
+
+
+class DebugMenu(ctk.CTkToplevel):
+    """调试菜单窗口"""
+
+    def __init__(self, parent, driver, log_callback):
+        super().__init__(parent)
+
+        self.title("调试工具")
+        self.geometry("500x450")
+        self.minsize(400, 350)
+
+        self.driver = driver
+        self.log_callback = log_callback
+
+        self.transient(parent)
+        self.grab_set()
+
+        self._setup_ui()
+        self._load_debug_log()
+
+    def _setup_ui(self):
+        """设置UI"""
+        # 标题
+        header = ctk.CTkFrame(self, fg_color=Colors.CARD_BG)
+        header.pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkLabel(
+            header,
+            text="调试日志",
+            font=("Arial", 14, "bold")
+        ).pack(side="left", padx=15, pady=10)
+
+        # 按钮组
+        btn_frame = ctk.CTkFrame(header, fg_color="transparent")
+        btn_frame.pack(side="right", padx=10)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="刷新",
+            width=60,
+            fg_color=Colors.SECONDARY,
+            command=self._load_debug_log
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="清除",
+            width=60,
+            fg_color=Colors.SECONDARY,
+            command=self._clear_log
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="导出",
+            width=60,
+            command=self._export_log
+        ).pack(side="left", padx=5)
+
+        # 日志显示区域
+        self.log_text = ctk.CTkTextbox(
+            self,
+            font=("Consolas", 10),
+            wrap="none"
+        )
+        self.log_text.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        # 设备信息按钮
+        ctk.CTkButton(
+            self,
+            text="检测设备",
+            width=150,
+            command=self._detect_devices
+        ).pack(pady=(0, 10))
+
+    def _load_debug_log(self):
+        """加载调试日志"""
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", "end")
+
+        log_content = self.driver.get_debug_log()
+        if log_content:
+            self.log_text.insert("1.0", log_content)
+        else:
+            self.log_text.insert("1.0", "(暂无调试日志)\n\n提示: 执行读取或写入操作后，调试日志会自动记录。")
+
+        self.log_text.configure(state="disabled")
+
+    def _clear_log(self):
+        """清除日志"""
+        self.driver.clear_debug_log()
+        self._load_debug_log()
+        self.log_callback("调试日志已清除", "info")
+
+    def _export_log(self):
+        """导出日志"""
+        path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            initialfilename=f"spd_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        )
+
+        if path:
+            if self.driver.export_debug_log(path):
+                self.log_callback(f"调试日志已导出到: {path}", "success")
+                messagebox.showinfo("成功", f"调试日志已导出到:\n{path}")
+            else:
+                messagebox.showerror("错误", "导出失败")
+
+    def _detect_devices(self):
+        """检测设备"""
+        from ..core.driver import SPDDriver
+
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", "end")
+
+        # 检测 SPD 设备
+        spd_devices = SPDDriver.find_spd_devices()
+        self.log_text.insert("end", "=== SPD 读写器设备检测 ===\n\n")
+
+        if spd_devices:
+            self.log_text.insert("end", f"找到 {len(spd_devices)} 个匹配设备:\n")
+            for i, dev in enumerate(spd_devices):
+                self.log_text.insert("end", f"\n[{i}] 设备信息:\n")
+                self.log_text.insert("end", f"    产品: {dev.get('product_string', 'N/A')}\n")
+                self.log_text.insert("end", f"    制造商: {dev.get('manufacturer_string', 'N/A')}\n")
+                self.log_text.insert("end", f"    VID: 0x{dev.get('vendor_id', 0):04X}\n")
+                self.log_text.insert("end", f"    PID: 0x{dev.get('product_id', 0):04X}\n")
+                self.log_text.insert("end", f"    路径: {dev.get('path', 'N/A')}\n")
+        else:
+            self.log_text.insert("end", "未找到 SPD 读写器设备!\n")
+            self.log_text.insert("end", f"目标: VID=0x0483, PID=0x1230\n\n")
+
+        # 列出所有 HID 设备
+        self.log_text.insert("end", "\n=== 系统 HID 设备列表 ===\n\n")
+        all_devices = SPDDriver.enumerate_devices()
+
+        if all_devices:
+            self.log_text.insert("end", f"共检测到 {len(all_devices)} 个 HID 设备:\n\n")
+            for i, dev in enumerate(all_devices[:20]):  # 最多显示 20 个
+                vid = dev.get('vendor_id', 0)
+                pid = dev.get('product_id', 0)
+                name = dev.get('product_string', 'N/A') or 'N/A'
+                self.log_text.insert("end", f"[{i:2d}] VID=0x{vid:04X}  PID=0x{pid:04X}  {name}\n")
+
+            if len(all_devices) > 20:
+                self.log_text.insert("end", f"\n... 还有 {len(all_devices) - 20} 个设备未显示\n")
+        else:
+            self.log_text.insert("end", "未检测到任何 HID 设备\n")
+
+        self.log_text.configure(state="disabled")
 
 
 class ExportMenu(ctk.CTkToplevel):
