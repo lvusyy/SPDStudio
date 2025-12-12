@@ -98,9 +98,6 @@ class HexView(ctk.CTkFrame):
         self.hex_text.bind("<Button-1>", self._on_click)
         self.hex_text.bind("<Double-Button-1>", self._on_double_click)
         self.hex_text.bind("<Key>", self._on_key)
-        # 禁用拖动选择，防止复制时混合十六进制和 ASCII
-        self.hex_text.bind("<B1-Motion>", lambda e: "break")
-        self.hex_text.bind("<<Selection>>", lambda e: self.hex_text.tag_remove("sel", "1.0", "end"))
 
         # 配置标签样式
         # 注意: CTkTextbox 的 tag_config 不支持 font 选项
@@ -198,12 +195,15 @@ class HexView(ctk.CTkFrame):
             return "break"
 
         # 处理十六进制输入
-        char = event.char.upper()
-        if char in "0123456789ABCDEF":
-            current_val = self._data[self._selected_offset]
-            # 左移4位并加入新值
-            new_val = ((current_val << 4) | int(char, 16)) & 0xFF
-            self._set_byte(self._selected_offset, new_val)
+        char = event.char.upper() if event.char else ""
+        if char and char in "0123456789ABCDEF":
+            try:
+                current_val = self._data[self._selected_offset]
+                # 左移4位并加入新值
+                new_val = ((current_val << 4) | int(char, 16)) & 0xFF
+                self._set_byte(self._selected_offset, new_val)
+            except (ValueError, IndexError):
+                pass
             return "break"
 
         # 导航键

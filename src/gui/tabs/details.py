@@ -214,6 +214,7 @@ class DetailsTab(ctk.CTkFrame):
 
     def refresh(self):
         """刷新显示"""
+        print("[DEBUG DetailsTab] refresh() called")
         if not self.data_model.has_data:
             self._show_no_data()
             return
@@ -241,6 +242,8 @@ class DetailsTab(ctk.CTkFrame):
             "spd_bytes_used": f"{self.data_model.data[0]} bytes" if self.data_model.has_data else "-",
             "spd_revision": f"{self.data_model.data[1] >> 4}.{self.data_model.data[1] & 0x0F}" if self.data_model.has_data else "-",
         }
+
+        print(f"[DEBUG DetailsTab] Updating fields with: manufacturer={field_mapping['manufacturer']}, module_type={field_mapping['module_type']}")
 
         for key, value in field_mapping.items():
             if key in self.fields:
