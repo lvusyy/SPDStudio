@@ -76,10 +76,13 @@ class SPD_BYTES:
     PART_NUMBER_END = 348         # 部件号结束位置 (20字符)
     REVISION_CODE = 349           # 修订代码
 
-    # XMP 配置 (384-511)
-    XMP_HEADER = 384              # XMP 头部标识
-    XMP_PROFILE1_START = 393      # XMP Profile 1 起始
-    XMP_PROFILE2_START = 440      # XMP Profile 2 起始
+    # XMP 2.0 配置 (384-511)
+    # 根据 XMP 2.0 规范
+    XMP_HEADER = 384              # XMP 头部标识 (0x180)
+    XMP_REVISION = 385            # XMP 修订版本
+    XMP_PROFILE_ENABLED = 386     # Profile 启用状态 (bit 0 = Profile 1, bit 1 = Profile 2)
+    XMP_PROFILE1_START = 393      # XMP Profile 1 起始 (0x189)
+    XMP_PROFILE2_START = 440      # XMP Profile 2 起始 (0x1B8)
 
 # DDR4 类型标识
 DDR4_TYPE = 0x0C
