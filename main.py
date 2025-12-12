@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-SPD Studio v2.0
-DDR4 内存 SPD 读写工具
+SPDStudio - DDR4 内存 SPD 读写工具
 
 使用方法:
     python main.py

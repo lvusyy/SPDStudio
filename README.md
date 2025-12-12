@@ -1,4 +1,4 @@
-# SPD Studio v2.0
+# SPDStudio
 
 DDR4 内存 SPD 数据读写工具，支持查看、编辑和写入内存条的 SPD (Serial Presence Detect) 数据。
 
@@ -94,18 +94,18 @@ DDR4 内存 SPD 数据读写工具，支持查看、编辑和写入内存条的 
 
 ### 方式一：下载预编译版本 (推荐)
 
-从 [Releases](https://github.com/lvusyy/SPDTools/releases) 页面下载对应平台的可执行文件：
+从 [Releases](https://github.com/lvusyy/SPDStudio/releases) 页面下载对应平台的可执行文件：
 
-- **Windows**: 下载 `SPD_Studio.exe`，直接运行
-- **Linux**: 下载 `SPD_Studio`，添加执行权限后运行
+- **Windows**: 下载 `SPDStudio-Windows-vX.X.X.zip`，解压后运行 `SPDStudio.exe`
+- **Linux**: 下载 `SPDStudio-Linux-vX.X.X.tar.gz`，解压后添加执行权限运行
 
 ### 方式二：从源码运行
 
 #### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/lvusyy/SPDTools.git
-cd SPDTools
+git clone https://github.com/lvusyy/SPDStudio.git
+cd SPDStudio
 ```
 
 #### 2. 安装依赖
@@ -181,9 +181,10 @@ sudo udevadm control --reload-rules
 ## 项目结构
 
 ```
-SPDTools/
+SPDStudio/
 ├── main.py                 # 程序入口
 ├── README.md               # 本文档
+├── CHANGELOG.md            # 版本更新日志
 ├── requirements.txt        # Python 依赖
 ├── samples/                # 示例 SPD 数据文件
 │   ├── DDR3_*.bin

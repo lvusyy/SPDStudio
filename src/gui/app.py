@@ -1,5 +1,5 @@
 """
-SPDTools 主应用窗口
+SPDStudio 主应用窗口
 """
 
 import customtkinter as ctk
@@ -23,7 +23,7 @@ from ..utils.constants import Colors, SPD_SIZE
 
 
 class SPDApp(ctk.CTk):
-    """SPD Tools 主应用"""
+    """SPDStudio 主应用"""
 
     def __init__(self):
         super().__init__()
@@ -33,7 +33,7 @@ class SPDApp(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         # 窗口配置
-        self.title("SPD Studio v2.0")
+        self.title("SPDStudio")
         self.geometry("1100x750")
         self.minsize(900, 600)
 
