@@ -230,8 +230,8 @@ class XMPTab(ctk.CTkFrame):
         XMPEditDialog(
             self.winfo_toplevel(),
             profile_num=profile_num,
-            profile_data=profile_data,
-            on_save=lambda data: self._write_xmp_profile(profile_num, data)
+            existing_data=profile_data,
+            on_save=lambda pnum, data: self._write_xmp_profile(pnum, data)
         )
 
     def _on_create_profile(self, profile_num: int):
@@ -239,22 +239,12 @@ class XMPTab(ctk.CTkFrame):
         if not self.data_model.has_data:
             return
 
-        # 使用默认值创建新 Profile
-        default_data = {
-            "frequency": 3200,
-            "voltage": 1.350,
-            "cl": 16,
-            "trcd": 18,
-            "trp": 18,
-            "tras": 38
-        }
-
-        # 打开编辑对话框
+        # 打开编辑对话框 (existing_data=None 表示创建新配置)
         XMPEditDialog(
             self.winfo_toplevel(),
             profile_num=profile_num,
-            profile_data=default_data,
-            on_save=lambda data: self._write_xmp_profile(profile_num, data, is_new=True)
+            existing_data=None,
+            on_save=lambda pnum, data: self._write_xmp_profile(pnum, data, is_new=True)
         )
 
     def _write_xmp_profile(self, profile_num: int, data: Dict, is_new: bool = False):

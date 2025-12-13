@@ -71,18 +71,18 @@ class TimingEditDialog(ctk.CTkToplevel):
         self.risk_indicator = ctk.CTkLabel(
             self.risk_frame,
             text="●",
-            font=("Arial", 20)
+            font=("Arial", 24)
         )
-        self.risk_indicator.pack(side="left", padx=15, pady=10)
+        self.risk_indicator.pack(side="left", padx=15, pady=15)
 
         self.risk_message = ctk.CTkLabel(
             self.risk_frame,
             text="",
             font=("Arial", 11),
-            wraplength=320,
+            wraplength=280,
             justify="left"
         )
-        self.risk_message.pack(side="left", fill="x", expand=True, pady=10, padx=(0, 15))
+        self.risk_message.pack(side="left", fill="both", expand=True, pady=15, padx=(0, 15))
 
         # 按钮
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")

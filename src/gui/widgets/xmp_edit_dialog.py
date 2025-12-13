@@ -220,8 +220,10 @@ class XMPEditDialog(ctk.CTkToplevel):
                     text_color=RISK_COLORS[risk]
                 )
             else:
+                # msg already contains emoji prefix from validate_timing
+                display_msg = msg if len(msg) <= 80 else msg[:77] + "..."
                 self.risk_label.configure(
-                    text=f"⚠️ {msg[:80]}...",
+                    text=display_msg,
                     text_color=RISK_COLORS[risk]
                 )
 

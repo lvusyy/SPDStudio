@@ -149,14 +149,27 @@ class SPDApp(ctk.CTk):
         )
         self.btn_debug.pack(side="left")
 
-        # 右侧：版本号和修改状态指示
+        # 右侧：检查更新按钮、版本号和修改状态指示
+        self.btn_update = ctk.CTkButton(
+            toolbar,
+            text="检查更新",
+            width=80,
+            height=24,
+            font=("Arial", 10),
+            fg_color="transparent",
+            hover_color=Colors.SECONDARY,
+            text_color=Colors.TEXT_SECONDARY,
+            command=self._check_updates_manual
+        )
+        self.btn_update.pack(side="right", padx=(0, 5))
+
         self.version_label = ctk.CTkLabel(
             toolbar,
             text=f"v{__version__}",
             font=("Arial", 10),
             text_color=Colors.TEXT_SECONDARY
         )
-        self.version_label.pack(side="right", padx=(0, 10))
+        self.version_label.pack(side="right", padx=(0, 5))
 
         self.modified_label = ctk.CTkLabel(
             toolbar,
