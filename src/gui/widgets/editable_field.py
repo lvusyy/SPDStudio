@@ -23,6 +23,7 @@ class EditableField(ctk.CTkFrame):
         max_value: Optional[int] = None,
         editable: bool = True,
         on_change: Optional[Callable[[str, Any], None]] = None,
+        show_serial_generator: bool = False,  # 用于序列号快速生成
         **kwargs
     ):
         super().__init__(master, fg_color="transparent", **kwargs)
@@ -35,6 +36,7 @@ class EditableField(ctk.CTkFrame):
         self.max_value = max_value
         self.editable = editable
         self.on_change = on_change
+        self.show_serial_generator = show_serial_generator
         self._is_modified = False
 
         self.grid_columnconfigure(1, weight=1)
@@ -129,7 +131,8 @@ class EditableField(ctk.CTkFrame):
             self.winfo_toplevel(),
             title=f"编辑 {self.label_text}",
             current_value=self._value,
-            on_save=self._on_value_changed
+            on_save=self._on_value_changed,
+            show_serial_generator=self.show_serial_generator
         )
 
     def _show_select_dialog(self):
@@ -339,15 +342,19 @@ class NumberEditDialog(ctk.CTkToplevel):
 class HexEditDialog(ctk.CTkToplevel):
     """十六进制编辑对话框"""
 
-    def __init__(self, parent, title: str, current_value: str, on_save: Callable[[str], None]):
+    def __init__(self, parent, title: str, current_value: str, on_save: Callable[[str], None],
+                 show_serial_generator: bool = False):
         super().__init__(parent)
 
         self.title(title)
-        self.geometry("350x250")
+        # Increase height if showing serial generator buttons
+        height = 310 if show_serial_generator else 250
+        self.geometry(f"350x{height}")
         self.resizable(False, False)
 
         self.current_value = current_value
         self.on_save = on_save
+        self.show_serial_generator = show_serial_generator
 
         self.transient(parent)
         self.grab_set()
@@ -365,6 +372,27 @@ class HexEditDialog(ctk.CTkToplevel):
         self.hex_entry.focus()
         self.hex_entry.bind("<KeyRelease>", self._on_hex_change)
         self.hex_entry.bind("<Return>", self._on_save)
+
+        # 序列号快速生成按钮
+        if self.show_serial_generator:
+            btn_gen_frame = ctk.CTkFrame(self, fg_color="transparent")
+            btn_gen_frame.pack(fill="x", padx=20, pady=(10, 0))
+
+            ctk.CTkButton(
+                btn_gen_frame,
+                text="随机生成",
+                width=90,
+                fg_color=Colors.PRIMARY,
+                command=self._generate_random
+            ).pack(side="left", padx=5)
+
+            ctk.CTkButton(
+                btn_gen_frame,
+                text="全零序列",
+                width=90,
+                fg_color=Colors.SECONDARY,
+                command=self._generate_zeros
+            ).pack(side="left", padx=5)
 
         # 十进制显示
         ctk.CTkLabel(self, text="十进制值:").pack(anchor="w", padx=20, pady=(10, 5))
@@ -391,6 +419,21 @@ class HexEditDialog(ctk.CTkToplevel):
             width=100,
             command=self._on_save
         ).pack(side="right", expand=True)
+
+    def _generate_random(self):
+        """生成随机序列号（4字节完全随机）"""
+        import random
+        random_bytes = [random.randint(0, 255) for _ in range(4)]
+        hex_value = ''.join(f'{b:02X}' for b in random_bytes)
+        self.hex_entry.delete(0, "end")
+        self.hex_entry.insert(0, f"0x{hex_value}")
+        self._on_hex_change(None)
+
+    def _generate_zeros(self):
+        """生成全零序列号"""
+        self.hex_entry.delete(0, "end")
+        self.hex_entry.insert(0, "0x00000000")
+        self._on_hex_change(None)
 
     def _on_hex_change(self, event):
         """十六进制输入变化"""

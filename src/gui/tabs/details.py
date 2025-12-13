@@ -54,7 +54,7 @@ class DetailsTab(ctk.CTkFrame):
         self._create_section("制造商信息", [
             ("制造商", "manufacturer", "select", True, COMMON_MANUFACTURERS),
             ("部件号", "part_number", "text", True),
-            ("序列号", "serial_number", "hex", True),
+            ("序列号", "serial_number", "hex", True, None, None, True),  # 添加 show_serial_generator
             ("生产日期", "manufacturing_date", "text", True),
         ])
 
@@ -94,12 +94,16 @@ class DetailsTab(ctk.CTkFrame):
             options = None
             min_val = None
             max_val = None
+            show_serial_generator = False
 
             if field_type == "select" and len(field_config) > 4:
                 options = field_config[4]
             elif field_type == "number" and len(field_config) > 5:
                 min_val = field_config[4]
                 max_val = field_config[5]
+            elif field_type == "hex" and len(field_config) > 6:
+                # For hex fields, check if show_serial_generator flag is present
+                show_serial_generator = field_config[6]
 
             field = EditableField(
                 section_frame,
@@ -110,7 +114,8 @@ class DetailsTab(ctk.CTkFrame):
                 min_value=min_val,
                 max_value=max_val,
                 editable=editable,
-                on_change=lambda n, v, k=key: self._on_field_changed(k, v)
+                on_change=lambda n, v, k=key: self._on_field_changed(k, v),
+                show_serial_generator=show_serial_generator
             )
             field.grid(row=i + 2, column=0, sticky="ew", padx=15, pady=5)
             self.fields[key] = field
