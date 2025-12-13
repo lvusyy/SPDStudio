@@ -13,13 +13,16 @@ from datetime import datetime
 from ..core.driver import SPDDriver
 from ..core.model import SPDDataModel, DataChangeEvent, DataChangeType
 from ..core.parser import DDR4Parser
+from ..core.updater import UpdateChecker, ReleaseInfo
 from .tabs.overview import OverviewTab
 from .tabs.details import DetailsTab
 from .tabs.timing import TimingTab
 from .tabs.xmp import XMPTab
 from .tabs.hex_editor import HexEditorTab
 from .tabs.log import LogTab
+from .widgets.update_dialog import UpdateDialog
 from ..utils.constants import Colors, SPD_SIZE
+from ..utils.version import __version__
 
 
 class SPDApp(ctk.CTk):
@@ -33,13 +36,14 @@ class SPDApp(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         # 窗口配置
-        self.title("SPDStudio")
+        self.title(f"SPDStudio v{__version__}")
         self.geometry("1100x750")
         self.minsize(900, 600)
 
         # 核心组件 - 启用调试模式
         self.driver = SPDDriver(debug=True)
         self.data_model = SPDDataModel()
+        self.updater = UpdateChecker()
 
         # 状态
         self._is_connected = False
@@ -53,6 +57,9 @@ class SPDApp(ctk.CTk):
 
         # 监听数据变更
         self.data_model.add_observer(self._on_data_changed)
+
+        # 启动更新检查（2秒延迟，避免影响启动速度）
+        self.after(2000, self._check_updates_startup)
 
     def _setup_ui(self):
         """设置界面"""
@@ -142,14 +149,22 @@ class SPDApp(ctk.CTk):
         )
         self.btn_debug.pack(side="left")
 
-        # 右侧：修改状态指示
+        # 右侧：版本号和修改状态指示
+        self.version_label = ctk.CTkLabel(
+            toolbar,
+            text=f"v{__version__}",
+            font=("Arial", 10),
+            text_color=Colors.TEXT_SECONDARY
+        )
+        self.version_label.pack(side="right", padx=(0, 10))
+
         self.modified_label = ctk.CTkLabel(
             toolbar,
             text="",
             font=("Arial", 11),
             text_color=Colors.MODIFIED
         )
-        self.modified_label.pack(side="right", padx=15)
+        self.modified_label.pack(side="right", padx=(15, 0))
 
     def _create_main_area(self):
         """创建主区域（选项卡）"""
@@ -504,6 +519,37 @@ class SPDApp(ctk.CTk):
     def _show_debug_menu(self):
         """显示调试菜单"""
         menu = DebugMenu(self, self.driver, self._log)
+
+    def _check_updates_startup(self):
+        """启动时检查更新（静默）"""
+        self.updater.check_for_updates(self._on_update_check_startup)
+
+    def _on_update_check_startup(self, release: Optional[ReleaseInfo], error: Optional[str]):
+        """启动更新检查回调"""
+        if release and release.is_newer:
+            # 发现新版本，显示更新对话框
+            self.after(0, lambda: UpdateDialog(self, release, __version__))
+
+    def _check_updates_manual(self):
+        """手动检查更新"""
+        self._set_status("正在检查更新...")
+        self._log("正在检查更新...", "info")
+        self.updater.check_for_updates(self._on_update_check_manual)
+
+    def _on_update_check_manual(self, release: Optional[ReleaseInfo], error: Optional[str]):
+        """手动更新检查回调"""
+        if error:
+            self._set_status("检查更新失败")
+            self._log(f"检查更新失败: {error}", "error")
+            messagebox.showerror("检查更新", f"检查更新失败:\n{error}")
+        elif release and release.is_newer:
+            self._set_status("发现新版本")
+            self._log(f"发现新版本: {release.tag_name}", "success")
+            UpdateDialog(self, release, __version__)
+        else:
+            self._set_status("已是最新版本")
+            self._log(f"当前版本 v{__version__} 已是最新版本", "success")
+            messagebox.showinfo("检查更新", f"当前版本 v{__version__} 已是最新版本")
 
 
 class DebugMenu(ctk.CTkToplevel):
