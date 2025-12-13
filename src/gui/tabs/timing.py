@@ -7,9 +7,10 @@ import customtkinter as ctk
 from typing import Optional, Dict, Any
 
 from ..widgets.editable_field import EditableField
+from ..widgets.timing_edit_dialog import TimingEditDialog
 from ...core.model import SPDDataModel, DataChangeEvent
 from ...core.parser import DDR4Parser
-from ...utils.constants import Colors
+from ...utils.constants import Colors, SPD_BYTES, MTB, FTB
 
 
 class TimingTab(ctk.CTkFrame):
@@ -77,15 +78,47 @@ class TimingTab(ctk.CTkFrame):
         ]
 
         for i, (label, key) in enumerate(basic_timings):
-            field = EditableField(
-                left_frame,
-                label=label,
-                value="-",
-                field_type="text",
-                editable=False
+            # Create custom clickable field for timing editing
+            field_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
+            field_frame.grid(row=i + 1, column=0, sticky="ew", padx=15, pady=3)
+            field_frame.grid_columnconfigure(1, weight=1)
+
+            # Label
+            label_widget = ctk.CTkLabel(
+                field_frame,
+                text=f"{label}:",
+                font=("Arial", 12),
+                text_color=Colors.TEXT_SECONDARY,
+                width=200,
+                anchor="w"
             )
-            field.grid(row=i + 1, column=0, sticky="ew", padx=15, pady=3)
-            self.fields[key] = field
+            label_widget.grid(row=0, column=0, sticky="w")
+
+            # Value label
+            value_label = ctk.CTkLabel(
+                field_frame,
+                text="-",
+                font=("Arial", 12),
+                text_color=Colors.TEXT,
+                anchor="w"
+            )
+            value_label.grid(row=0, column=1, sticky="w", padx=(10, 0))
+
+            # Edit button
+            edit_btn = ctk.CTkButton(
+                field_frame,
+                text="Edit",
+                width=50,
+                height=24,
+                font=("Arial", 10),
+                fg_color=Colors.SECONDARY,
+                hover_color=Colors.PRIMARY,
+                command=lambda k=key, lbl=label: self._on_edit_timing(k, lbl)
+            )
+            edit_btn.grid(row=0, column=2, sticky="e", padx=(10, 0))
+
+            # Store reference
+            self.fields[key] = {"label": value_label, "button": edit_btn}
 
         # 右侧：高级时序
         right_frame = ctk.CTkFrame(self, fg_color=Colors.CARD_BG, corner_radius=10)
@@ -159,22 +192,30 @@ class TimingTab(ctk.CTkFrame):
 
         # 更新时序字段
         timings = info.get("timings", {})
-        for key, field in self.fields.items():
-            if key in timings:
-                field.set_value(str(timings[key]))
-            elif key == "tFAW":
-                # 需要额外计算
-                timing_obj = parser.parse_timings()
-                field.set_value(f"{timing_obj.tFAW:.3f} ns")
-            elif key == "tRRD_S":
-                timing_obj = parser.parse_timings()
-                field.set_value(f"{timing_obj.tRRD_S:.3f} ns")
-            elif key == "tRRD_L":
-                timing_obj = parser.parse_timings()
-                field.set_value(f"{timing_obj.tRRD_L:.3f} ns")
-            elif key == "tCCD_L":
-                timing_obj = parser.parse_timings()
-                field.set_value(f"{timing_obj.tCCD_L:.3f} ns")
+        for key in ["tCK", "tAA", "tRCD", "tRP", "tRAS", "tRC"]:
+            if key in self.fields:
+                field = self.fields[key]
+                if isinstance(field, dict) and "label" in field:
+                    # New format with custom layout
+                    if key in timings:
+                        field["label"].configure(text=str(timings[key]))
+                else:
+                    # Old EditableField format (for advanced timings)
+                    if key in timings:
+                        field.set_value(str(timings[key]))
+
+        # Update advanced timings (still using EditableField)
+        timing_obj = parser.parse_timings()
+        if "tRFC1" in self.fields:
+            self.fields["tRFC1"].set_value(f"{timing_obj.tRFC1:.1f} ns")
+        if "tFAW" in self.fields:
+            self.fields["tFAW"].set_value(f"{timing_obj.tFAW:.3f} ns")
+        if "tRRD_S" in self.fields:
+            self.fields["tRRD_S"].set_value(f"{timing_obj.tRRD_S:.3f} ns")
+        if "tRRD_L" in self.fields:
+            self.fields["tRRD_L"].set_value(f"{timing_obj.tRRD_L:.3f} ns")
+        if "tCCD_L" in self.fields:
+            self.fields["tCCD_L"].set_value(f"{timing_obj.tCCD_L:.3f} ns")
 
         # 更新支持的 CL
         supported_cl = info.get("supported_cl", [])
@@ -189,7 +230,86 @@ class TimingTab(ctk.CTkFrame):
         self.main_timing_label.configure(text="CL--")
         self.timing_detail_label.configure(text="@ - MT/s")
 
-        for field in self.fields.values():
-            field.set_value("-")
+        for key, field in self.fields.items():
+            if isinstance(field, dict) and "label" in field:
+                field["label"].configure(text="-")
+            else:
+                field.set_value("-")
 
         self.cl_label.configure(text="-")
+
+    def _on_edit_timing(self, key: str, label: str):
+        """编辑时序参数"""
+        if not self.data_model.has_data:
+            return
+
+        # 获取当前值
+        field = self.fields.get(key)
+        if not field or not isinstance(field, dict):
+            return
+
+        current_text = field["label"].cget("text")
+        try:
+            # 提取数值部分 (e.g., "13.500 ns" -> 13.500)
+            current_value = float(current_text.split()[0])
+        except (ValueError, IndexError):
+            current_value = 0.0
+
+        # 打开编辑对话框
+        TimingEditDialog(
+            self.winfo_toplevel(),
+            param_name=key,
+            param_label=label,
+            current_value_ns=current_value,
+            on_save=lambda v: self._write_timing(key, v)
+        )
+
+    def _write_timing(self, key: str, value_ns: float):
+        """写入时序参数到 SPD 数据"""
+        value_ps = value_ns * 1000
+        mtb_value = int(value_ps / MTB)
+        ftb_value = int((value_ps - mtb_value * MTB) / FTB)
+
+        # 将 FTB 转换为有符号字节 (-128 到 127)
+        if ftb_value > 127:
+            ftb_value = ftb_value - 256
+        elif ftb_value < -128:
+            ftb_value = ftb_value + 256
+        ftb_byte = ftb_value & 0xFF
+
+        if key == "tCK":
+            self.data_model.set_byte(SPD_BYTES.TCK_MIN, mtb_value)
+            self.data_model.set_byte(SPD_BYTES.TCK_MIN_FTB, ftb_byte)
+
+        elif key == "tAA":
+            self.data_model.set_byte(SPD_BYTES.TAA_MIN, mtb_value)
+            self.data_model.set_byte(SPD_BYTES.TAA_MIN_FTB, ftb_byte)
+
+        elif key == "tRCD":
+            self.data_model.set_byte(SPD_BYTES.TRCD_MIN, mtb_value)
+            self.data_model.set_byte(SPD_BYTES.TRCD_MIN_FTB, ftb_byte)
+
+        elif key == "tRP":
+            self.data_model.set_byte(SPD_BYTES.TRP_MIN, mtb_value)
+            self.data_model.set_byte(SPD_BYTES.TRP_MIN_FTB, ftb_byte)
+
+        elif key == "tRAS":
+            # tRAS uses high nibble of byte 27 + full byte 28
+            high_nibble = (mtb_value >> 8) & 0x0F
+            low_byte = mtb_value & 0xFF
+            current_27 = self.data_model.get_byte(SPD_BYTES.TRAS_TRC_HIGH)
+            new_27 = (current_27 & 0xF0) | high_nibble  # Keep tRC high nibble
+            self.data_model.set_byte(SPD_BYTES.TRAS_TRC_HIGH, new_27)
+            self.data_model.set_byte(SPD_BYTES.TRAS_MIN_LOW, low_byte)
+
+        elif key == "tRC":
+            # tRC uses high nibble of byte 27 + full byte 29 + FTB
+            high_nibble = (mtb_value >> 8) & 0x0F
+            low_byte = mtb_value & 0xFF
+            current_27 = self.data_model.get_byte(SPD_BYTES.TRAS_TRC_HIGH)
+            new_27 = (current_27 & 0x0F) | (high_nibble << 4)  # Keep tRAS high nibble
+            self.data_model.set_byte(SPD_BYTES.TRAS_TRC_HIGH, new_27)
+            self.data_model.set_byte(SPD_BYTES.TRC_MIN_LOW, low_byte)
+            self.data_model.set_byte(SPD_BYTES.TRC_MIN_FTB, ftb_byte)
+
+        # Refresh will be triggered automatically by data model observer
