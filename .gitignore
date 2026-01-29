@@ -45,3 +45,7 @@ backup_spd_*.bin
 
 # Spec workflow
 .spec-workflow/
+
+# Local dev artifacts
+_local/
+
