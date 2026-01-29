@@ -10,7 +10,7 @@ from ..widgets.editable_field import EditableField
 from ...core.model import SPDDataModel, DataChangeEvent
 from ...core.parser import DDR4Parser
 from ...core.parser.manufacturers import COMMON_MANUFACTURERS, get_manufacturer_id
-from ...utils.constants import Colors, SPD_BYTES, MODULE_TYPES
+from ...utils.constants import Colors, SPD_BYTES, MODULE_TYPES, MTB
 
 
 class DetailsTab(ctk.CTkFrame):
@@ -256,8 +256,13 @@ class DetailsTab(ctk.CTkFrame):
                 if 1600 <= speed <= 5000:
                     # tCK_min in ps, MTB = 125ps
                     tck_ps = 2000000 / speed
-                    tck_mtb = int(tck_ps / 125)
+                    tck_ps_int = int(round(tck_ps))
+
+                    tck_mtb = int(tck_ps_int // MTB)
+                    tck_ftb = int(tck_ps_int - tck_mtb * MTB)  # 0..124
+
                     self.data_model.set_byte(SPD_BYTES.TCK_MIN, tck_mtb)
+                    self.data_model.set_byte(SPD_BYTES.TCK_MIN_FTB, tck_ftb & 0xFF)
             except ValueError:
                 pass
 

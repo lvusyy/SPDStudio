@@ -111,7 +111,7 @@ class LogTab(ctk.CTkFrame):
         path = filedialog.asksaveasfilename(
             defaultextension=".txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-            initialfilename=f"spd_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            initialfile=f"spd_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         )
 
         if path:

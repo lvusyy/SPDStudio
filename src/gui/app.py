@@ -406,7 +406,7 @@ class SPDApp(ctk.CTk):
                 ("SPD Binary", "*.bin"),
                 ("All files", "*.*")
             ],
-            initialfilename="spd_data.bin"
+            initialfile="spd_data.bin"
         )
 
         if path:
@@ -663,7 +663,7 @@ class DebugMenu(ctk.CTkToplevel):
         path = filedialog.asksaveasfilename(
             defaultextension=".txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-            initialfilename=f"spd_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            initialfile=f"spd_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         )
 
         if path:
@@ -769,7 +769,7 @@ class ExportMenu(ctk.CTkToplevel):
         path = filedialog.asksaveasfilename(
             defaultextension=".bin",
             filetypes=[("Binary", "*.bin")],
-            initialfilename="spd_export.bin"
+            initialfile="spd_export.bin"
         )
         if path:
             self.data_model.save_to_file(path)
@@ -781,7 +781,7 @@ class ExportMenu(ctk.CTkToplevel):
         path = filedialog.asksaveasfilename(
             defaultextension=".txt",
             filetypes=[("Text", "*.txt")],
-            initialfilename="spd_report.txt"
+            initialfile="spd_report.txt"
         )
         if path:
             content = self.data_model.export_to_text()
@@ -795,7 +795,7 @@ class ExportMenu(ctk.CTkToplevel):
         path = filedialog.asksaveasfilename(
             defaultextension=".json",
             filetypes=[("JSON", "*.json")],
-            initialfilename="spd_data.json"
+            initialfile="spd_data.json"
         )
         if path:
             content = self.data_model.export_to_json()

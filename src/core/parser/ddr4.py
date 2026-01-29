@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from .manufacturers import get_manufacturer_name
 from .die_database import infer_die_type, get_die_description
 from ...utils.constants import (
-    SPD_SIZE, SPD_BYTES, DDR4_TYPE, MODULE_TYPES,
+    SPD_SIZE, SPD_BYTES, XMP_PROFILE_OFFSETS, DDR4_TYPE, MODULE_TYPES,
     DENSITY_MAP, DEVICE_WIDTH, ROW_BITS, COL_BITS,
     MTB, FTB, SPEED_GRADES, XMP_MAGIC,
     PACKAGE_TYPES, DIE_COUNTS, SIGNAL_LOADING, BANKS_PER_GROUP
@@ -75,6 +75,14 @@ class XMPProfile:
     tRCD: int = 0
     tRP: int = 0
     tRAS: int = 0
+    tRC: int = 0
+    tRFC1: int = 0
+    tRFC2: int = 0
+    tRFC4: int = 0
+    tFAW: int = 0
+    tRRD_S: int = 0
+    tRRD_L: int = 0
+    tWR: int = 0
 
 
 class DDR4Parser:
@@ -266,11 +274,12 @@ class DDR4Parser:
         twr_low = self.data[SPD_BYTES.TWR_MIN_LOW]
         timing.tWR = (twr_high + twr_low) * MTB / 1000
 
-        # tWTR_S (byte 43)
-        timing.tWTR_S = self.data[SPD_BYTES.TWTR_S_MIN] * MTB / 1000
-
-        # tWTR_L (byte 44)
-        timing.tWTR_L = self.data[SPD_BYTES.TWTR_L_MIN] * MTB / 1000
+        # tWTR_S / tWTR_L (bytes 43-45, 12-bit using shared high-nibble byte)
+        twtr_high = self.data[SPD_BYTES.TWTR_MIN_HIGH]
+        twtr_s = ((twtr_high & 0x0F) << 8) | self.data[SPD_BYTES.TWTR_S_MIN]
+        twtr_l = ((twtr_high >> 4) << 8) | self.data[SPD_BYTES.TWTR_L_MIN]
+        timing.tWTR_S = twtr_s * MTB / 1000
+        timing.tWTR_L = twtr_l * MTB / 1000
 
         # 计算 CL (cycles)
         if timing.tCK > 0:
@@ -505,35 +514,85 @@ class DDR4Parser:
         if len(self.data) < 440:
             return result
 
-        xmp_header = self.data[SPD_BYTES.XMP_HEADER]
+        xmp_id0 = self.data[SPD_BYTES.XMP_HEADER]
+        xmp_id1 = self.data[SPD_BYTES.XMP_HEADER + 1] if len(self.data) > SPD_BYTES.XMP_HEADER + 1 else 0
 
-        # XMP 2.0 header 为 0x0C
-        if xmp_header == XMP_MAGIC:
+        # XMP Identification String: 0x0C 0x4A ('J')
+        if xmp_id0 == XMP_MAGIC and xmp_id1 == 0x4A:
             result["supported"] = True
-            result["version"] = "2.0"
+
+            revision = self.data[SPD_BYTES.XMP_REVISION] if len(self.data) > SPD_BYTES.XMP_REVISION else 0
+            if revision:
+                major = (revision >> 4) & 0x0F
+                minor = revision & 0x0F
+                result["version"] = f"{major}.{minor}"
+            else:
+                result["version"] = "2.0"
 
             # Profile 启用状态 (Byte 386)
             profile_enabled = self.data[SPD_BYTES.XMP_PROFILE_ENABLED] if len(self.data) > SPD_BYTES.XMP_PROFILE_ENABLED else 0
 
             # 解析 Profile 1 (从 Byte 393 开始)
-            profile1 = self._parse_xmp_profile(SPD_BYTES.XMP_PROFILE1_START, 1)
+            should_try_p1 = (profile_enabled == 0) or bool(profile_enabled & 0x01)
+            if should_try_p1:
+                profile1 = self._parse_xmp_profile(SPD_BYTES.XMP_PROFILE1_START, 1)
+            else:
+                profile1 = XMPProfile()
+
             if profile1.enabled:
+                timings_str = (
+                    f"CL{profile1.CL}-{profile1.tRCD}-{profile1.tRP}-{profile1.tRAS}-{profile1.tRC}"
+                    if profile1.tRC > 0
+                    else f"CL{profile1.CL}-{profile1.tRCD}-{profile1.tRP}-{profile1.tRAS}"
+                )
                 result["profiles"].append({
+                    "profile_num": 1,
                     "name": "Profile 1",
                     "voltage": profile1.voltage,
                     "frequency": profile1.frequency,
-                    "timings": f"CL{profile1.CL}-{profile1.tRCD}-{profile1.tRP}-{profile1.tRAS}"
+                    "CL": profile1.CL,
+                    "tRCD": profile1.tRCD,
+                    "tRP": profile1.tRP,
+                    "tRAS": profile1.tRAS,
+                    "tRC": profile1.tRC,
+                    "tRFC1": profile1.tRFC1,
+                    "tRFC2": profile1.tRFC2,
+                    "tRFC4": profile1.tRFC4,
+                    "tFAW": profile1.tFAW,
+                    "tRRD_S": profile1.tRRD_S,
+                    "tRRD_L": profile1.tRRD_L,
+                    "tWR": profile1.tWR,
+                    "timings": timings_str,
                 })
 
             # 解析 Profile 2 (从 Byte 440 开始)
-            if len(self.data) >= 487:
+            should_try_p2 = (profile_enabled == 0) or bool(profile_enabled & 0x02)
+            if len(self.data) >= 487 and should_try_p2:
                 profile2 = self._parse_xmp_profile(SPD_BYTES.XMP_PROFILE2_START, 2)
                 if profile2.enabled:
+                    timings_str = (
+                        f"CL{profile2.CL}-{profile2.tRCD}-{profile2.tRP}-{profile2.tRAS}-{profile2.tRC}"
+                        if profile2.tRC > 0
+                        else f"CL{profile2.CL}-{profile2.tRCD}-{profile2.tRP}-{profile2.tRAS}"
+                    )
                     result["profiles"].append({
+                        "profile_num": 2,
                         "name": "Profile 2",
                         "voltage": profile2.voltage,
                         "frequency": profile2.frequency,
-                        "timings": f"CL{profile2.CL}-{profile2.tRCD}-{profile2.tRP}-{profile2.tRAS}"
+                        "CL": profile2.CL,
+                        "tRCD": profile2.tRCD,
+                        "tRP": profile2.tRP,
+                        "tRAS": profile2.tRAS,
+                        "tRC": profile2.tRC,
+                        "tRFC1": profile2.tRFC1,
+                        "tRFC2": profile2.tRFC2,
+                        "tRFC4": profile2.tRFC4,
+                        "tFAW": profile2.tFAW,
+                        "tRRD_S": profile2.tRRD_S,
+                        "tRRD_L": profile2.tRRD_L,
+                        "tWR": profile2.tWR,
+                        "timings": timings_str,
                     })
 
         return result
@@ -563,74 +622,161 @@ class DDR4Parser:
 
         # 电压字节
         voltage_byte = self.data[start_offset]
-        if voltage_byte == 0 or voltage_byte == 0xFF:
+        if voltage_byte == 0 or voltage_byte == 0xFF or (voltage_byte & 0x80) == 0:
             print(f"[DEBUG XMP] Profile {profile_num} disabled (voltage_byte=0x{voltage_byte:02X})")
             return profile
 
         profile.enabled = True
 
-        # 电压解析: VDD = 1.20V + (voltage_byte[5:0] * 5mV)
-        # 0xA3 & 0x3F = 0x23 = 35, 35 * 5mV = 175mV, 1.2V + 0.175V = 1.375V
-        # 但 Thaiphoon 显示 1.35V，所以可能是不同的计算方式
-        # 0x1E = 30, 30 * 5mV = 150mV, 1.2V + 0.15V = 1.35V
-        profile.voltage = 1.2 + (voltage_byte & 0x3F) * 0.005
+        # 电压解析: bit7=Profile enabled, bits6:0 为 10mV 步进
+        # 例如: 0xA3 & 0x7F = 0x23 = 35 => 1.00V + 0.35V = 1.35V
+        profile.voltage = 1.0 + (voltage_byte & 0x7F) * 0.01
         print(f"[DEBUG XMP] Profile {profile_num} voltage: {profile.voltage:.3f}V (byte=0x{voltage_byte:02X})")
 
-        # tCK - 尝试多个位置找到合理的 tCK 值
-        tck_candidates = [
-            (3, "offset+3"),  # 根据实际数据，tCK 在 offset +3
-            (2, "offset+2"),
-            (1, "offset+1"),
-        ]
+        def _ceil_div(numerator: int, denominator: int) -> int:
+            if denominator <= 0:
+                return 0
+            return (numerator + denominator - 1) // denominator
 
-        for tck_offset, desc in tck_candidates:
-            tck_mtb = self.data[start_offset + tck_offset] if start_offset + tck_offset < len(self.data) else 0
-            if tck_mtb > 0 and tck_mtb < 20:  # tCK 通常在 4-15 范围 (DDR4-1600 到 DDR4-4000)
-                profile.tCK = tck_mtb * MTB / 1000  # 转换为 ns
-                profile.frequency = int(2000 / profile.tCK) if profile.tCK > 0 else 0
-                print(f"[DEBUG XMP] Profile {profile_num} tCK from {desc}: byte=0x{tck_mtb:02X}, tCK={profile.tCK:.3f}ns, freq={profile.frequency} MT/s")
-                if 1600 <= profile.frequency <= 6000:
-                    break
+        # tCK 解析
+        # XMP Profile 的 tCK 使用 MTB+FTB 编码：tCK(ps)=tCK_MTB*125 + tCK_FTB*1 (FTB 为 signed int8)
+        tck_mtb = self.data[start_offset + XMP_PROFILE_OFFSETS.TCK_MTB] if start_offset + XMP_PROFILE_OFFSETS.TCK_MTB < len(self.data) else 0
+        tck_ftb_raw = self.data[start_offset + XMP_PROFILE_OFFSETS.TCK_FTB] if start_offset + XMP_PROFILE_OFFSETS.TCK_FTB < len(self.data) else 0
+        tck_ftb = self._signed_byte(tck_ftb_raw)
+
+        def _snap_xmp_frequency(raw_mt_s: float) -> int:
+            """将非整数/非标准频点吸附到常见 XMP 标称值，避免出现 3597/3604 这类读数。"""
+            if raw_mt_s <= 0:
+                return 0
+
+            candidates = [
+                1600, 1866, 2133, 2400, 2666, 2800, 2933, 3000, 3200, 3333,
+                3400, 3466, 3600, 3733, 3800, 3866, 4000, 4133, 4266, 4400, 4500, 4600,
+                4800, 5000, 5200, 5400, 5600, 5800, 6000,
+            ]
+
+            nearest = min(candidates, key=lambda v: abs(v - raw_mt_s))
+            if abs(nearest - raw_mt_s) <= 3:
+                return int(nearest)
+            return int(round(raw_mt_s))
+
+        tck_ps = tck_mtb * MTB + tck_ftb * FTB
+        if 200 <= tck_ps <= 2000:
+            profile.tCK = tck_ps / 1000  # 转换为 ns
+            raw_freq = 2000000 / tck_ps
+            profile.frequency = _snap_xmp_frequency(raw_freq)
+            print(
+                f"[DEBUG XMP] Profile {profile_num} tCK: MTB={tck_mtb}, FTB={tck_ftb} (raw=0x{tck_ftb_raw:02X}), "
+                f"tCK={profile.tCK:.3f}ns, freq≈{raw_freq:.1f} MT/s -> {profile.frequency} MT/s"
+            )
 
         if profile.frequency < 1600 or profile.frequency > 6000:
-            print(f"[DEBUG XMP] Profile {profile_num} WARNING: Could not find valid tCK")
+            print(f"[DEBUG XMP] Profile {profile_num} WARNING: Invalid frequency {profile.frequency}")
             profile.frequency = 0
 
         # 时序参数
         # tAA (CAS Latency Time) 在 offset +8
-        taa_byte = self.data[start_offset + 8] if start_offset + 8 < len(self.data) else 0
-        print(f"[DEBUG XMP] Profile {profile_num} tAA raw: 0x{taa_byte:02X} ({taa_byte})")
+        taa_mtb = self.data[start_offset + XMP_PROFILE_OFFSETS.TAA_MTB] if start_offset + XMP_PROFILE_OFFSETS.TAA_MTB < len(self.data) else 0
+        taa_ftb_raw = self.data[start_offset + XMP_PROFILE_OFFSETS.TAA_FTB] if start_offset + XMP_PROFILE_OFFSETS.TAA_FTB < len(self.data) else 0
+        taa_ftb = self._signed_byte(taa_ftb_raw)
+        print(f"[DEBUG XMP] Profile {profile_num} tAA raw: MTB=0x{taa_mtb:02X} ({taa_mtb}), FTB=0x{taa_ftb_raw:02X} ({taa_ftb})")
 
-        # CL = tAA / tCK
-        if profile.tCK > 0 and taa_byte > 0:
-            taa_ns = taa_byte * MTB / 1000
-            profile.CL = round(taa_ns / profile.tCK)
-            print(f"[DEBUG XMP] Profile {profile_num} CL: tAA={taa_ns:.3f}ns / tCK={profile.tCK:.3f}ns = CL{profile.CL}")
+        # CL: 取满足 tAAmin 的最小整数 cycles (ceil)
+        if profile.tCK > 0 and taa_mtb > 0 and tck_ps > 0:
+            taa_ps = taa_mtb * MTB + taa_ftb * FTB
+            profile.CL = _ceil_div(taa_ps, tck_ps)
+            taa_ns = taa_ps / 1000
+            print(f"[DEBUG XMP] Profile {profile_num} CL: tAA={taa_ns:.3f}ns / tCK={profile.tCK:.3f}ns => CL{profile.CL}")
 
         # tRCD 在 offset +9
-        trcd_byte = self.data[start_offset + 9] if start_offset + 9 < len(self.data) else 0
-        if profile.tCK > 0 and trcd_byte > 0:
-            trcd_ns = trcd_byte * MTB / 1000
-            profile.tRCD = round(trcd_ns / profile.tCK)
-            print(f"[DEBUG XMP] Profile {profile_num} tRCD: {trcd_ns:.3f}ns = {profile.tRCD} cycles")
+        trcd_mtb = self.data[start_offset + XMP_PROFILE_OFFSETS.TRCD_MTB] if start_offset + XMP_PROFILE_OFFSETS.TRCD_MTB < len(self.data) else 0
+        trcd_ftb_raw = self.data[start_offset + XMP_PROFILE_OFFSETS.TRCD_FTB] if start_offset + XMP_PROFILE_OFFSETS.TRCD_FTB < len(self.data) else 0
+        trcd_ftb = self._signed_byte(trcd_ftb_raw)
+        if profile.tCK > 0 and trcd_mtb > 0 and tck_ps > 0:
+            trcd_ps = trcd_mtb * MTB + trcd_ftb * FTB
+            profile.tRCD = _ceil_div(trcd_ps, tck_ps)
+            trcd_ns = trcd_ps / 1000
+            print(f"[DEBUG XMP] Profile {profile_num} tRCD: {trcd_ns:.3f}ns => {profile.tRCD} cycles")
 
         # tRP 在 offset +10
-        trp_byte = self.data[start_offset + 10] if start_offset + 10 < len(self.data) else 0
-        if profile.tCK > 0 and trp_byte > 0:
-            trp_ns = trp_byte * MTB / 1000
-            profile.tRP = round(trp_ns / profile.tCK)
-            print(f"[DEBUG XMP] Profile {profile_num} tRP: {trp_ns:.3f}ns = {profile.tRP} cycles")
+        trp_mtb = self.data[start_offset + XMP_PROFILE_OFFSETS.TRP_MTB] if start_offset + XMP_PROFILE_OFFSETS.TRP_MTB < len(self.data) else 0
+        trp_ftb_raw = self.data[start_offset + XMP_PROFILE_OFFSETS.TRP_FTB] if start_offset + XMP_PROFILE_OFFSETS.TRP_FTB < len(self.data) else 0
+        trp_ftb = self._signed_byte(trp_ftb_raw)
+        if profile.tCK > 0 and trp_mtb > 0 and tck_ps > 0:
+            trp_ps = trp_mtb * MTB + trp_ftb * FTB
+            profile.tRP = _ceil_div(trp_ps, tck_ps)
+            trp_ns = trp_ps / 1000
+            print(f"[DEBUG XMP] Profile {profile_num} tRP: {trp_ns:.3f}ns => {profile.tRP} cycles")
 
         # tRAS 在 offset +11-12 (upper nibble + lower byte)
-        tras_upper = (self.data[start_offset + 11] & 0x0F) if start_offset + 11 < len(self.data) else 0
-        tras_lower = self.data[start_offset + 12] if start_offset + 12 < len(self.data) else 0
+        tras_upper = (self.data[start_offset + XMP_PROFILE_OFFSETS.TRAS_TRC_HIGH] & 0x0F) if start_offset + XMP_PROFILE_OFFSETS.TRAS_TRC_HIGH < len(self.data) else 0
+        tras_lower = self.data[start_offset + XMP_PROFILE_OFFSETS.TRAS_MTB_LOW] if start_offset + XMP_PROFILE_OFFSETS.TRAS_MTB_LOW < len(self.data) else 0
         tras_mtb = (tras_upper << 8) | tras_lower
-        if profile.tCK > 0 and tras_mtb > 0:
-            tras_ns = tras_mtb * MTB / 1000
-            profile.tRAS = round(tras_ns / profile.tCK)
-            print(f"[DEBUG XMP] Profile {profile_num} tRAS: raw=0x{tras_upper:X}{tras_lower:02X} ({tras_mtb}), {tras_ns:.3f}ns = {profile.tRAS} cycles")
+        if profile.tCK > 0 and tras_mtb > 0 and tck_ps > 0:
+            tras_ps = tras_mtb * MTB
+            profile.tRAS = _ceil_div(tras_ps, tck_ps)
+            tras_ns = tras_ps / 1000
+            print(f"[DEBUG XMP] Profile {profile_num} tRAS: raw=0x{tras_upper:X}{tras_lower:02X} ({tras_mtb}), {tras_ns:.3f}ns => {profile.tRAS} cycles")
 
-        print(f"[DEBUG XMP] Profile {profile_num} FINAL: CL{profile.CL}-{profile.tRCD}-{profile.tRP}-{profile.tRAS} @ {profile.frequency} MT/s, {profile.voltage:.3f}V")
+        # tRC (offset +11 high nibble +13 low byte +34 FTB)
+        trc_upper = (self.data[start_offset + XMP_PROFILE_OFFSETS.TRAS_TRC_HIGH] >> 4) & 0x0F if start_offset + XMP_PROFILE_OFFSETS.TRAS_TRC_HIGH < len(self.data) else 0
+        trc_low = self.data[start_offset + XMP_PROFILE_OFFSETS.TRC_MTB_LOW] if start_offset + XMP_PROFILE_OFFSETS.TRC_MTB_LOW < len(self.data) else 0
+        trc_mtb = (trc_upper << 8) | trc_low
+        trc_ftb_raw = self.data[start_offset + XMP_PROFILE_OFFSETS.TRC_FTB] if start_offset + XMP_PROFILE_OFFSETS.TRC_FTB < len(self.data) else 0
+        trc_ftb = self._signed_byte(trc_ftb_raw)
+        if profile.tCK > 0 and trc_mtb > 0 and tck_ps > 0:
+            trc_ps = trc_mtb * MTB + trc_ftb * FTB
+            profile.tRC = _ceil_div(trc_ps, tck_ps)
+            trc_ns = trc_ps / 1000
+            print(f"[DEBUG XMP] Profile {profile_num} tRC: raw=0x{trc_upper:X}{trc_low:02X} ({trc_mtb}), FTB=0x{trc_ftb_raw:02X} ({trc_ftb}), {trc_ns:.3f}ns => {profile.tRC} cycles")
+
+        # tRFC1/2/4 (16-bit MTB, little-endian)
+        def _read_u16_le(rel_off_low: int, rel_off_high: int) -> int:
+            low = self.data[start_offset + rel_off_low] if start_offset + rel_off_low < len(self.data) else 0
+            high = self.data[start_offset + rel_off_high] if start_offset + rel_off_high < len(self.data) else 0
+            return (high << 8) | low
+
+        trfc1_mtb = _read_u16_le(XMP_PROFILE_OFFSETS.TRFC1_LOW, XMP_PROFILE_OFFSETS.TRFC1_HIGH)
+        if profile.tCK > 0 and trfc1_mtb > 0 and tck_ps > 0:
+            trfc1_ps = trfc1_mtb * MTB
+            profile.tRFC1 = _ceil_div(trfc1_ps, tck_ps)
+
+        trfc2_mtb = _read_u16_le(XMP_PROFILE_OFFSETS.TRFC2_LOW, XMP_PROFILE_OFFSETS.TRFC2_HIGH)
+        if profile.tCK > 0 and trfc2_mtb > 0 and tck_ps > 0:
+            trfc2_ps = trfc2_mtb * MTB
+            profile.tRFC2 = _ceil_div(trfc2_ps, tck_ps)
+
+        trfc4_mtb = _read_u16_le(XMP_PROFILE_OFFSETS.TRFC4_LOW, XMP_PROFILE_OFFSETS.TRFC4_HIGH)
+        if profile.tCK > 0 and trfc4_mtb > 0 and tck_ps > 0:
+            trfc4_ps = trfc4_mtb * MTB
+            profile.tRFC4 = _ceil_div(trfc4_ps, tck_ps)
+
+        # tFAW (12-bit MTB: low nibble + low byte)
+        tfaw_high = (self.data[start_offset + XMP_PROFILE_OFFSETS.TFAW_HIGH] & 0x0F) if start_offset + XMP_PROFILE_OFFSETS.TFAW_HIGH < len(self.data) else 0
+        tfaw_low = self.data[start_offset + XMP_PROFILE_OFFSETS.TFAW_LOW] if start_offset + XMP_PROFILE_OFFSETS.TFAW_LOW < len(self.data) else 0
+        tfaw_mtb = (tfaw_high << 8) | tfaw_low
+        if profile.tCK > 0 and tfaw_mtb > 0 and tck_ps > 0:
+            tfaw_ps = tfaw_mtb * MTB
+            profile.tFAW = _ceil_div(tfaw_ps, tck_ps)
+
+        # tRRD_S / tRRD_L (1-byte MTB)
+        trrd_s_mtb = self.data[start_offset + XMP_PROFILE_OFFSETS.TRRD_S_MIN] if start_offset + XMP_PROFILE_OFFSETS.TRRD_S_MIN < len(self.data) else 0
+        if profile.tCK > 0 and trrd_s_mtb > 0 and tck_ps > 0:
+            profile.tRRD_S = _ceil_div(trrd_s_mtb * MTB, tck_ps)
+
+        trrd_l_mtb = self.data[start_offset + XMP_PROFILE_OFFSETS.TRRD_L_MIN] if start_offset + XMP_PROFILE_OFFSETS.TRRD_L_MIN < len(self.data) else 0
+        if profile.tCK > 0 and trrd_l_mtb > 0 and tck_ps > 0:
+            profile.tRRD_L = _ceil_div(trrd_l_mtb * MTB, tck_ps)
+
+        # tWR (12-bit MTB)
+        twr_high = (self.data[start_offset + XMP_PROFILE_OFFSETS.TWR_HIGH] & 0x0F) if start_offset + XMP_PROFILE_OFFSETS.TWR_HIGH < len(self.data) else 0
+        twr_low = self.data[start_offset + XMP_PROFILE_OFFSETS.TWR_LOW] if start_offset + XMP_PROFILE_OFFSETS.TWR_LOW < len(self.data) else 0
+        twr_mtb = (twr_high << 8) | twr_low
+        if profile.tCK > 0 and twr_mtb > 0 and tck_ps > 0:
+            profile.tWR = _ceil_div(twr_mtb * MTB, tck_ps)
+
+        extra = f"-{profile.tRC}" if profile.tRC else ""
+        print(f"[DEBUG XMP] Profile {profile_num} FINAL: CL{profile.CL}-{profile.tRCD}-{profile.tRP}-{profile.tRAS}{extra} @ {profile.frequency} MT/s, {profile.voltage:.3f}V")
 
         return profile
 

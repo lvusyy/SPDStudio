@@ -56,8 +56,10 @@ class SPD_BYTES:
     TCCD_L_MIN = 40         # 最小 tCCD_L
     TWR_MIN_HIGH = 41       # tWR 高位 (bits 11:8)
     TWR_MIN_LOW = 42        # tWR 低位 (bits 7:0)
-    TWTR_S_MIN = 43         # 最小 tWTR_S
-    TWTR_L_MIN = 44         # 最小 tWTR_L
+    # tWTR_S / tWTR_L 为 12-bit：Byte 43 提供高位 nibbles，Byte 44/45 为低位
+    TWTR_MIN_HIGH = 43      # tWTR_S/tWTR_L 高位 nibble 组合
+    TWTR_S_MIN = 44         # 最小 tWTR_S (低 8 位)
+    TWTR_L_MIN = 45         # 最小 tWTR_L (低 8 位)
 
     # 细粒度时序调整 (FTB)
     TCK_MIN_FTB = 125       # tCK Fine Offset
@@ -86,11 +88,59 @@ class SPD_BYTES:
 
     # XMP 2.0 配置 (384-511)
     # 根据 XMP 2.0 规范
+    # Byte 384-385: Intel XMP Identification String (0x0C, 0x4A/'J')
     XMP_HEADER = 384              # XMP 头部标识 (0x180)
-    XMP_REVISION = 385            # XMP 修订版本
-    XMP_PROFILE_ENABLED = 386     # Profile 启用状态 (bit 0 = Profile 1, bit 1 = Profile 2)
+    # Byte 386: XMP Organization / Profile Enable bits (bit0=Profile1, bit1=Profile2)
+    XMP_PROFILE_ENABLED = 386     # Profile 启用状态
+    # Byte 387: XMP Revision (e.g., 0x20 = XMP 2.0)
+    XMP_REVISION = 387            # XMP 修订版本
     XMP_PROFILE1_START = 393      # XMP Profile 1 起始 (0x189)
     XMP_PROFILE2_START = 440      # XMP Profile 2 起始 (0x1B8)
+
+
+# XMP 2.0 Profile 内部字段偏移 (相对于 XMP_PROFILE*_START)
+# 说明：XMP Profile 的时序单位同样基于 DDR4 的 MTB/FTB (MTB=125ps, FTB=1ps)。
+class XMP_PROFILE_OFFSETS:
+    # 基础字段
+    VDD_VOLTAGE = 0          # VDD 电压编码 (带 bit7 启用位)
+    CAS_LATENCIES_0 = 4      # CAS Latencies Supported (bitmap, byte 0, CL7..)
+    CAS_LATENCIES_1 = 5      # CAS Latencies Supported (bitmap, byte 1)
+    CAS_LATENCIES_2 = 6      # CAS Latencies Supported (bitmap, byte 2)
+    TCK_MTB = 3              # tCKAVGmin (MTB, 125ps)
+
+    # 时序 MTB 字段
+    TAA_MTB = 8              # tAAmin (MTB)
+    TRCD_MTB = 9             # tRCDmin (MTB)
+    TRP_MTB = 10             # tRPmin (MTB)
+    TRAS_TRC_HIGH = 11       # tRAS/tRC 高位 nibble 组合
+    TRAS_MTB_LOW = 12        # tRAS 低 8 位 (MTB)
+    TRC_MTB_LOW = 13         # tRC 低 8 位 (MTB)
+
+    # 进阶时序 (MTB, 与 DDR4 SPD Timing 字段布局基本一致)
+    TRFC1_LOW = 14           # tRFC1 低位 (MTB)
+    TRFC1_HIGH = 15          # tRFC1 高位 (MTB)
+    TRFC2_LOW = 16           # tRFC2 低位 (MTB)
+    TRFC2_HIGH = 17          # tRFC2 高位 (MTB)
+    TRFC4_LOW = 18           # tRFC4 低位 (MTB)
+    TRFC4_HIGH = 19          # tRFC4 高位 (MTB)
+
+    TFAW_HIGH = 20           # tFAW 高位 (bits 11:8 in low nibble)
+    TFAW_LOW = 21            # tFAW 低位
+    TRRD_S_MIN = 22          # tRRD_S (MTB)
+    TRRD_L_MIN = 23          # tRRD_L (MTB)
+    TCCD_L_MIN = 24          # tCCD_L (MTB)
+    TWR_HIGH = 25            # tWR 高位 (bits 11:8 in low nibble)
+    TWR_LOW = 26             # tWR 低位
+    TWTR_S_MIN = 27          # tWTR_S (MTB)
+    TWTR_L_MIN = 28          # tWTR_L (MTB)
+
+    # 细粒度时序调整 (FTB, signed int8, 1ps)
+    # 这些偏移在实际 SPD 数据中位于 profile 尾部 (示例：0x1AB..0x1AF)。
+    TRC_FTB = 34             # tRC Fine Offset
+    TRP_FTB = 35             # tRP Fine Offset
+    TRCD_FTB = 36            # tRCD Fine Offset
+    TAA_FTB = 37             # tAA Fine Offset
+    TCK_FTB = 38             # tCK Fine Offset
 
 # DDR4 类型标识
 DDR4_TYPE = 0x0C
