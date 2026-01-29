@@ -5,6 +5,18 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v1.1.2] - 2026-01-29
+
+### 修复
+- 修复 XMP Profile 频率计算：正确处理 tCK MTB/FTB 与 FTB fine offset，避免频率误判。
+- 修复 DDR4 基础时序 tWTR 解析（12-bit 共享高位 nibble）。
+
+### 改进
+- 完善导出功能：支持导出 BIN / TXT / JSON，并支持导出日志。
+
+### 测试
+- 新增 XMP/时序解析回归测试。
+
 ## [v1.1.1] - 2025-12-14
 
 ### 改进
@@ -17,6 +29,18 @@
 - **扩展 DDR4 解析**: 添加 Die/封装信息、Bank 配置、寻址信息解析
 - **界面信息增强**: Overview 和 Timing 页面显示更多内存参数
 
+## [v1.1.2] - 2026-01-29
+
+### 修复
+- 修复 XMP Profile 频率计算：正确处理 tCK MTB/FTB 与 FTB fine offset，避免频率误判。
+- 修复 DDR4 基础时序 tWTR 解析（12-bit 共享高位 nibble）。
+
+### 改进
+- 完善导出功能：支持导出 BIN / TXT / JSON，并支持导出日志。
+
+### 测试
+- 新增 XMP/时序解析回归测试。
+
 ## [v1.1.0] - 2025-12-13
 
 ### 新增功能
@@ -25,6 +49,18 @@
 - **可编辑时序参数**: 带有 JEDEC 风险警告的时序参数编辑
 - **XMP 配置文件编辑**: 完整的 XMP 2.0 配置文件管理
 - **自动更新检查器**: 启动时静默检查更新
+
+## [v1.1.2] - 2026-01-29
+
+### 修复
+- 修复 XMP Profile 频率计算：正确处理 tCK MTB/FTB 与 FTB fine offset，避免频率误判。
+- 修复 DDR4 基础时序 tWTR 解析（12-bit 共享高位 nibble）。
+
+### 改进
+- 完善导出功能：支持导出 BIN / TXT / JSON，并支持导出日志。
+
+### 测试
+- 新增 XMP/时序解析回归测试。
 
 ## [v1.0.0] - 2025-12-13
 
@@ -77,3 +113,4 @@
 - [ ] macOS 平台支持
 - [ ] 自定义设备 VID/PID 配置
 - [ ] 多语言支持 (English)
+

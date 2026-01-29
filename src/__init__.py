@@ -1,2 +1,5 @@
 # SPDTools - DDR4 Memory SPD Read/Write Tool
-__version__ = "2.0.0"
+from .utils.version import __version__
+
+__all__ = ["__version__"]
+
